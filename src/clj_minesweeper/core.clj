@@ -11,6 +11,7 @@
    4. Make the GUI pretty
   
    ∞. Port to Javascript
+)
 
 
 (ns clj-minesweeper.core
