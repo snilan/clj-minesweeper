@@ -1,11 +1,11 @@
 
 (ns clj-minesweeper.gui.swing
-	(:import (java.awt Color Toolkit Font GraphicsEnvironment Graphics2D Container GridLayout GridBagLayout GridBagConstraints Dimension Image)
-           (java.awt.image BufferStrategy)
-           (java.awt.event ActionListener MouseListener MouseMotionListener KeyListener
-                        MouseEvent KeyEvent MouseAdapter)
-           (javax.swing JFrame Timer JPanel JComponent JButton JLabel JTextField JOptionPane Icon ImageIcon)
+	(:import (java.awt Color Font GridLayout Dimension Image)
+           (java.awt.event MouseEvent MouseAdapter)
+           (javax.swing JFrame Timer JPanel JOptionPane JButton JLabel Icon ImageIcon)
            )
+       (:use 
+	       [clojure.contrib.swing-utils :only (do-swing do-swing*)])
 	   (:gen-class))
 
 (def button-size 40) ; 20 by 20 pixels per button
@@ -51,14 +51,14 @@
 		;;(.setEnabled this false)))
 
 
-(defn update-gui-button [gb lb] 
+(defn update-gui-button [gb lb]
 	(let [icon 
 			(cond
 				(and (:clicked lb) (:bomb lb)) (:bomb images) ; bomb image
 				(:clicked lb) nil						; no image (text)
 				(:flag lb) (:flag images) ; flag image
 				:else (:blank images))]
-		(do
+		(do-swing
 			(if icon
 				(.setIcon gb (scaled-icon icon image-size image-size))
 				(let [bn (:bomb-neighbors lb)]
@@ -73,10 +73,12 @@
 			(update-gui-button (get-in gui-board [y x]) (get-in logb [y x])))))
 
 (defn update-gui-bombs [gui-cnt bombs] 
-	(.setText gui-cnt (str "Bombs: " bombs)))
+	(do-swing
+		(.setText gui-cnt (str "Bombs: " bombs))))
 
 (defn update-gui-timer [gui-timer t] 
-	(.setText gui-timer (str "Time: " t)))
+	(do-swing
+		(.setText gui-timer (str "Time: " t))))
 
 (defmacro on-mouse-click [component event & body]
     `(. ~component addMouseListener 
@@ -91,14 +93,13 @@
 			(for [y (range bh)]
 		  	(vec 
 			  	(for [x (range bw)] 
-		 	  	(let [btn (JButton. "")]
-		 	  		(do
-			 	  		(.setPreferredSize btn (Dimension. 50 50))
-			 	  		(on-mouse-click btn event 
+		 	  		(doto (JButton. "")
+			 	  		(.setPreferredSize (Dimension. 50 50))
+			 	  		(on-mouse-click event 
 			 	  			  (if (left-click? event)
 								  (click-cb y x false)
-								  (click-cb y x true)))
-			 	  		btn))))))))			
+								  (click-cb y x true))))))))))			
+
 
 (defn init-gui-board [board click-cb board-change]
 	(let  [panel (JPanel.) bh (count board) bw (count (first board))
@@ -124,9 +125,8 @@
 		timer-change)) ;; set the watcher to update the JLabel
 
 (defn init-gui-container [gui-board gui-timer gui-bombs]
-	(let [
-		frame (JFrame. "Minesweeper")
-		panel (doto (JPanel.)
+	(let [frame (JFrame. "Minesweeper")
+		  panel (doto (JPanel.)
 				(.add gui-timer)
 				(.add gui-bombs)
 				(.add gui-board))]
@@ -141,9 +141,9 @@
 	(let [
 		gui-board 		(init-gui-board board click-cb board-change)
 		gui-timer 		(init-gui-timer timer timer-change)
-		gui-bombs 		(init-gui-bombs bomb-cnt bomb-change)
-		gui-container 	(init-gui-container gui-board gui-timer gui-bombs)]	
-	gui-container))
+		gui-bombs 		(init-gui-bombs bomb-cnt bomb-change)]
+	 (init-gui-container gui-board gui-timer gui-bombs)))
+
 
 (comment
 	(def *target-gui* :swing)

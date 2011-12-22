@@ -1,23 +1,25 @@
-(comment
-   TODO:
-   1. Fix clear-path to work for flags
-
-   2. Wrap the relevant Swing parts in (do-swing*) since
-      Swing is not thread safe
-
-   3. Change atomic reference to board to
-      a 2D vector of atomic references to squares
-
-   4. Make the GUI pretty
-  
-   ∞. Port to Javascript
-)
-
 
 (ns clj-minesweeper.core
 	(:use [clj-minesweeper.gui.swing]
-		  [clojure.set])
+		  [clojure.set :only (union)])
 	(:gen-class))
+
+
+;	TODO
+
+;   - Change atomic reference to board to a 2D vector of atomic references to squares
+;   - Implement end of game logic (check for bomb hit / all bombs flagged)
+;		- either in board-change function or click-cb
+;   - Wrap the relevant Swing parts in (do-swing*) since Swing is not thread safe
+
+
+; 	fixed clear-path a bit -> unit test
+; 	add unit tests
+
+;   - Make the GUI pretty
+;   - Port to Javascript
+
+
 
 (defrecord Square [y x bomb flag clicked bomb-neighbors])
 
@@ -132,14 +134,17 @@
 				(recur (bomb bnew y x) (dec num))))))))
 
 (defn clear-path [b y-start x-start]
-	(let [to-click
-		(loop [[[y x] & more :as all] [[y-start x-start]] seen #{}]
+	(let [
+		to-click
+		(loop [[[y x] & more :as all] [[y-start x-start]] seen #{[y-start x-start]}]
 			(if (seq all)
-				(let [n (remove seen (neighbors b y x)) bn (bomb-neighbors b y x)]
+				(let [  not-ok #(or (seen %) (clicked? b y x) (flag? b y x))
+					    n (remove not-ok (neighbors b y x)) bn (bomb-neighbors b y x)]
 					(if (= 0 bn)
-						(recur (concat more n) (clojure.set/union seen (set n)))
-				 		(recur more (conj seen [y x]))))
+						(recur (concat more n) (union seen (set n)))
+				 		(recur more seen)))
 					seen))]
+		(println "y = " y-start "x = " x-start "to-click = " to-click)
 		(reduce #(apply click % %2) b to-click)))
 		
 (defn success? []
@@ -167,10 +172,11 @@
 						(if is-flag
 							(swap! bombs-left inc)
 							(swap! bombs-left dec)))
-				is-bomb ;; just clicked a bomb
-					(do
-						(swap! board click y x)
-						(game-over))
+				is-bomb 
+					(if is-flag nil ; clicking on a flagged box does nothing
+						(do
+							(swap! board click y x)
+							(game-over)))
 				:else 	;; regular old click
 					(swap! board clear-path y x)))))
 
@@ -206,17 +212,15 @@
 
 (defn update-timer [x]
 	(do
-		(println x)
 		(. Thread (sleep 1000))
 		(send-off *agent* #'update-timer)
 		(inc x)))
 
 (defn -main []
-	(do
-		(new-game :hard)
-		(print-board @board :bomb)
-		(init-gui @board @timer @bombs-left click-cb 
-			board-change timer-change bombs-change)))
+	(new-game :medium)
+	(print-board @board :bomb)
+	(init-gui @board @timer @bombs-left click-cb 
+			board-change timer-change bombs-change))
 		;;(send-off timer update-timer)))
 
 
