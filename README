@@ -1,15 +1,14 @@
 
 
 About:
-	This is my attempt at writing a functional(ish) minesweeper in Clojure.
-
-	Since Clojure targets three different environments (JVM, CLR, and JavaScript),
-	I'm trying to write the actual logic in a platform-agnostic manner.
-
-	This is still very much a work in progress.
+   This is my attempt at writing a functional(ish) minesweeper in Clojure.
+   Since Clojure targets three different environments (JVM, CLR, and JavaScript),
+   I'm trying to write the actual logic in a platform-agnostic manner.
+   
+   This is still very much a work in progress.
 
 Usage:
-	(none yet)
+   (none yet)
 
 Copyright (C) 2011 Sean Nilan
 
