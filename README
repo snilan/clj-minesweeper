@@ -1,13 +1,16 @@
-# minesweeper
 
-FIXME: write description
 
-## Usage
+About:
+	This is my attempt at writing a functional(ish) minesweeper in Clojure.
 
-FIXME: write
+	Since Clojure targets three different environments (JVM, CLR, and JavaScript),
+	I'm trying to write the actual logic in a platform-agnostic manner.
 
-## License
+	This is still very much a work in progress.
 
-Copyright (C) 2011 FIXME
+Usage:
+	(none yet)
+
+Copyright (C) 2011 Sean Nilan
 
 Distributed under the Eclipse Public License, the same as Clojure.
