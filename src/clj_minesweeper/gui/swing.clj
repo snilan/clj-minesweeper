@@ -5,7 +5,11 @@
            (javax.swing JFrame Timer JPanel JOptionPane JButton JLabel Icon ImageIcon)
            )
        (:use 
-	       [clojure.contrib.swing-utils :only (do-swing do-swing*)])
+       	(clojure.contrib
+	       [swing-utils :only (do-swing do-swing*)]
+	       [miglayout :only (miglayout components)]))
+	   (:require 
+		   [clojure.contrib.miglayout :as mig])
 	   (:gen-class))
 
 (def button-size 40) ; 20 by 20 pixels per button
@@ -131,7 +135,13 @@
 				(.add gui-bombs)
 				(.add gui-board))]
 	(doto frame
-		(.setContentPane panel)
+		(.setDefaultCloseOperation JFrame/DISPOSE_ON_CLOSE)
+		(-> .getContentPane
+			(.add (miglayout (JPanel.)
+							gui-board [:wrap]
+							gui-timer [:align "left"]
+							gui-bombs [:align "right"]
+							)))
 		.pack .show)))
 
 

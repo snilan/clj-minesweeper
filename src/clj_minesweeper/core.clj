@@ -13,7 +13,7 @@
 ;   - Wrap the relevant Swing parts in (do-swing*) since Swing is not thread safe
 
 
-; 	fixed clear-path a bit -> unit test
+; 	fix clear-path to work with flags
 ; 	add unit tests
 
 ;   - Make the GUI pretty
@@ -138,7 +138,7 @@
 		to-click
 		(loop [[[y x] & more :as all] [[y-start x-start]] seen #{[y-start x-start]}]
 			(if (seq all)
-				(let [  not-ok #(or (seen %) (clicked? b y x) (flag? b y x))
+				(let [  not-ok #(or (seen %) (apply clicked? b %) (apply flag? b %))
 					    n (remove not-ok (neighbors b y x)) bn (bomb-neighbors b y x)]
 					(if (= 0 bn)
 						(recur (concat more n) (union seen (set n)))
@@ -186,6 +186,16 @@
 		::update-board
 		(fn [_ _ _ new-board]
 			(update-gui-board gui-board new-board))))
+
+
+(defn cell-change [gui-board]
+	(doseq [row board]
+		(doseq [cell row]
+			(add-watch
+				cell
+				::update-cell
+				(fn [_ _ _ new-cell]
+					(update-gui-board gui-board new-cell))))))
 
 (defn timer-change [gui-timer]
 	(add-watch 
