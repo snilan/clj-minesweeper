@@ -16,6 +16,19 @@
 ; 	fix clear-path to work with flags
 ; 	add unit tests
 
+;;(defn gui-bind [ident gui display]
+;;	(add-watch ident
+;;		(keyword (gensym))
+;;		(fn [_ _ _ val]
+;;			(display gui val))))
+
+;; could pass (partial gui-bind) to gui
+;; (let [gui (JLabel.)
+;;		display (fn [g val]
+;;					(.setText g (str val)))]
+;;	(on-atom-change gui change))
+
+;
 ;   - Make the GUI pretty
 ;   - Port to Javascript
 
@@ -58,11 +71,11 @@
  			(f cell))))))
 
 
-(def in-progress (atom false))
+(def in-progress (ref false))
 
-(def board (atom nil)) ;; new-game to initialize
+(def board (ref nil)) ;; new-game to initialize
 
-(def bombs-left (atom 0))
+(def bombs-left (ref 0))
 
 (def timer (agent 0))
 
@@ -168,24 +181,25 @@
 				is-clicked nil ;; already been clicked
 				flag-click ;; toggled a flag
 					(do
-						(swap! board flag y x) ;; this will toggle the flag-marker
+						(alter board flag y x) ;; this will toggle the flag-marker
 						(if is-flag
-							(swap! bombs-left inc)
-							(swap! bombs-left dec)))
+							(alter bombs-left inc)
+							(alter bombs-left dec)))
 				is-bomb 
 					(if is-flag nil ; clicking on a flagged box does nothing
 						(do
-							(swap! board click y x)
+							(alter board click y x)
 							(game-over)))
 				:else 	;; regular old click
-					(swap! board clear-path y x)))))
+					(alter board clear-path y x)))))
+
 
 (defn board-change [gui-board]
 	(add-watch 
 		board 
 		::update-board
-		(fn [_ _ _ new-board]
-			(update-gui-board gui-board new-board))))
+		(fn [_ _ old-board new-board]
+			(update-gui-board gui-board old-board new-board))))
 
 
 (defn cell-change [gui-board]
@@ -216,9 +230,14 @@
 		(let [bh (get-in levels [level :height])
 			  bw (get-in levels [level :width])
 			  bombs (get-in levels [level :bomb-count])]
-				(reset! bombs-left bombs)
-				(reset! board (new-board bh bw))
-				(swap! board place-bombs bombs))))
+				(ref-set bombs-left bombs)
+				(ref-set board (new-board bh bw))
+				(alter board place-bombs bombs))))
+
+
+(defn reset-cb []
+	(new-game :medium))
+
 
 (defn update-timer [x]
 	(do
@@ -229,7 +248,9 @@
 (defn -main []
 	(new-game :medium)
 	(print-board @board :bomb)
-	(init-gui @board @timer @bombs-left click-cb 
+	(init-gui 
+			@board @timer @bombs-left 
+			click-cb reset-cb
 			board-change timer-change bombs-change))
 		;;(send-off timer update-timer)))
 

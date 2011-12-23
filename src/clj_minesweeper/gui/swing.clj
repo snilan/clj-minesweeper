@@ -64,17 +64,22 @@
 				:else (:blank images))]
 		(do-swing
 			(if icon
-				(.setIcon gb (scaled-icon icon image-size image-size))
+				(do
+					(.setText gb "")
+					(.setIcon gb (scaled-icon icon image-size image-size)))
 				(let [bn (:bomb-neighbors lb)]
+					(.setIcon gb (:blank images))
 					(if (= 0 bn)
 						(.setText gb (str ""))
 						(.setText gb (str bn)))))
-			(if (:clicked lb) (.setEnabled gb false)))))
+			(if (:clicked lb) (.setEnabled gb false) (.setEnabled gb true)))))
 
-(defn update-gui-board [gui-board logb]
-	(let [bh (count logb) bw (count (first logb))]
+(defn update-gui-board [gui-board old-board new-board]
+	(let [bh (count gui-board) bw (count (first gui-board))]
 		(doseq [y (range bh) x (range bw)]
-			(update-gui-button (get-in gui-board [y x]) (get-in logb [y x])))))
+			(let [oldb (get-in old-board [y x]) newb (get-in new-board [y x])]
+			(if (not= oldb newb)
+				(update-gui-button (get-in gui-board [y x]) newb))))))
 
 (defn update-gui-bombs [gui-cnt bombs] 
 	(do-swing
@@ -89,7 +94,7 @@
 	    (proxy [MouseAdapter] []
 		    (mouseClicked [~event] ~@body))))
 
-(defn init-gui-buttons [board click-cb]
+(defn init-buttons [board click-cb]
 	"Returns a 2D vector of buttons"
 	(let [bh (count board) bw (count (first board))
 		  left-click? #(= (.getButton %) MouseEvent/BUTTON1)]
@@ -105,9 +110,9 @@
 								  (click-cb y x true))))))))))			
 
 
-(defn init-gui-board [board click-cb board-change]
+(defn init-board [board click-cb board-change]
 	(let  [panel (JPanel.) bh (count board) bw (count (first board))
-		   btns (init-gui-buttons board click-cb)]
+		   btns (init-buttons board click-cb)]
 	(do	
 		(board-change btns) ;; set the watcher to update btns
 		(.setLayout panel (GridLayout. bh bw))
@@ -118,17 +123,24 @@
 		panel))
 
 
-(defn init-gui-bombs [bomb-cnt bomb-change]
+(defn init-bombs [bomb-cnt bomb-change]
 	(doto
 		(JLabel. (str "Bombs left:\n", bomb-cnt))
 		bomb-change)) ;; set the watcher to update the JLabel
 
-(defn init-gui-timer [tme timer-change]
+(defn init-timer [tme timer-change]
 	(doto
 		(JLabel. (str "Time left:\n", tme))
 		timer-change)) ;; set the watcher to update the JLabel
 
-(defn init-gui-container [gui-board gui-timer gui-bombs]
+(defn init-reset [reset-cb]
+	(doto (JButton. "Reset")
+		  (on-mouse-click event
+		  		(reset-cb))))
+
+
+
+(defn init-container [gui-board gui-timer gui-bombs gui-reset]
 	(let [frame (JFrame. "Minesweeper")
 		  panel (doto (JPanel.)
 				(.add gui-timer)
@@ -140,6 +152,7 @@
 			(.add (miglayout (JPanel.)
 							gui-board [:wrap]
 							gui-timer [:align "left"]
+							gui-reset [:align "center"]
 							gui-bombs [:align "right"]
 							)))
 		.pack .show)))
@@ -147,12 +160,15 @@
 
 ;; lots of higher order closures being passed around
 (defn init-gui 
-	[board timer bomb-cnt click-cb board-change timer-change bomb-change]
+	[board timer bomb-cnt 
+	click-cb reset-cb
+	board-change timer-change bomb-change]
 	(let [
-		gui-board 		(init-gui-board board click-cb board-change)
-		gui-timer 		(init-gui-timer timer timer-change)
-		gui-bombs 		(init-gui-bombs bomb-cnt bomb-change)]
-	 (init-gui-container gui-board gui-timer gui-bombs)))
+		gui-board 		(init-board board click-cb board-change)
+		gui-timer 		(init-timer timer timer-change)
+		gui-bombs 		(init-bombs bomb-cnt bomb-change)
+		gui-reset 		(init-reset reset-cb)]
+	 (init-container gui-board gui-timer gui-bombs gui-reset)))
 
 
 (comment
