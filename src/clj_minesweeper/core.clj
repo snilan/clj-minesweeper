@@ -2,16 +2,14 @@
 (ns clj-minesweeper.core
   (:use [clj-minesweeper.gui.swing]
         [clojure.set :only (union)])
+  (:require [clj-minesweeper.dispatch :as dispatch])
   (:gen-class))
 
 
 ;	TODO
 
-;   - Change atomic reference to board to a 2D vector of atomic references to squares
 ;   - Implement end of game logic (check for bomb hit / all bombs flagged)
 ;		- either in board-change function or click-cb
-;   - Wrap the relevant Swing parts in (do-swing*) since Swing is not thread safe
-
 
 ; 	fix clear-path to work with flags
 ; 	add unit tests
@@ -47,9 +45,9 @@
 
 (def levels {
    :easy {
-      :height 9
-      :width 9
-      :bomb-count 10
+      :height 16
+      :width 16 
+      :bomb-count 20 
     }
    :medium {
       :height 16
@@ -76,7 +74,7 @@
 
 
 (def running (atom false))
-(def current-level (atom :easy))
+(def current-level (atom :medium))
 
 (def board (ref nil))
 (def bombs-left (ref 0))
@@ -99,20 +97,16 @@
 (defn bn? [b y x]
   (:bomb-neighbors (get-in b [y x])))
 
-
-(defn change-level [level]
-{
+(defn change-level [level] {
 	:pre (contains? levels level)
-}
+  }
   (reset! current-level level)
   (reset! running false)
   (reset! board 
     (new-board 
 	  (get-in levels [level :height]) 
       (get-in levels [level :width]))))
-
 	;update GUI
-
 
 (defn neighbors [b y x] 
   (filter 
@@ -131,29 +125,24 @@
 
 (defn flag [b y x]
   "Mark or unmark (toggle) a position as a bomb"
-  (let [sq (get-in b [y x])]
-    (assoc-in b [y x] 
-              (assoc sq :flag (not (:flag sq))))))
+    (update-in b [y x :flag] not))
 
 (defn click [b y x]
   "Mark a position as clicked. Cannot be unclicked"
-  (assoc-in b [y x] 
-            (assoc (get-in b [y x]) :clicked true)))
+  (update-in b [y x :clicked] (constantly true)))
 
 (defn bomb [b y x]
   "Place a bomb at a certain position on the board. Cannot be removed
   Also updates neighbors"
   (let [
         nbrs 	(neighbors b y x)
-		brd		(assoc-in b [y x] 
-					(assoc (get-in b [y x]) :bomb true))]
-    (reduce 
+		brd		(update-in b [y x :bomb] 
+                  (constantly true))]
+    (reduce
       (fn [bx [i j]]
-        (let [sq (get-in bx [i j]) bn (:bomb-neighbors sq)]
-          (assoc-in bx [i j]
-                    (assoc sq :bomb-neighbors (inc bn)))))
+        (update-in bx [i j :bomb-neighbors] inc))
       brd nbrs)))
-					
+
 
 (defn place-bombs [b n]
   (let [bh (count b) bw (count (first b))]
@@ -192,56 +181,12 @@
 (defn game-over []
   (println "Oops! You clicked a bomb! Game over"))
 
-(defn click-cb [y x flag-click]
-  (dosync
-    (let [b @board is-flag (flag? b y x) is-bomb (bomb? b y x) is-clicked (clicked? b y x)]
-      (cond 
-        is-clicked nil ;; already been clicked
-        flag-click ;; toggled a flag
-        (do
-          (alter board flag y x) ;; this will toggle the flag-marker
-          (if is-flag
-            (alter bombs-left inc)
-            (alter bombs-left dec)))
-        is-bomb 
-        (if is-flag nil ; clicking on a flagged box does nothing
-          (do
-            (alter board click y x)
-            (game-over)))
-        :else 	;; regular old click
-        (alter board clear-path y x)))))
+(defn update-timer [x]
+  (do
+    (. Thread (sleep 1000))
+    (send-off *agent* #'update-timer)
+    (inc x)))
 
-
-(defn board-change [gui-board]
-  (add-watch 
-    board 
-    ::update-board
-    (fn [_ _ old-board new-board]
-      (update-gui-board gui-board old-board new-board))))
-
-
-(defn cell-change [gui-board]
-  (doseq [row board]
-    (doseq [cell row]
-      (add-watch
-        cell
-        ::update-cell
-        (fn [_ _ _ new-cell]
-          (update-gui-board gui-board new-cell))))))
-
-(defn timer-change [gui-timer]
-  (add-watch 
-    timer 
-    ::update-timer
-    (fn [_ _ _ new-time]
-      (update-gui-timer gui-timer new-time))))
-
-(defn bombs-change [gui-bomb-cnt]
-  (add-watch 
-    bombs-left
-    ::update-bomb-count
-    (fn [_ _ _ new-bombs]
-      (update-gui-bombs gui-bomb-cnt new-bombs))))
 
 (defn new-game [level]
   (dosync
@@ -252,23 +197,67 @@
       (ref-set board (new-board bh bw))
       (alter board place-bombs bombs))))
 
-(defn reset-cb []
-  (new-game @current-level))
 
-(defn update-timer [x]
-  (do
-    (. Thread (sleep 1000))
-    (send-off *agent* #'update-timer)
-    (inc x)))
+
+(add-watch
+  board
+  ::update-board
+  (fn [_ _ old-board new-board]
+    (let [cells-changed
+          (map second
+            (filter (fn [[x y]]
+                        (not= x y)) 
+              (map vector
+                (flatten old-board) (flatten new-board))))]
+      (doseq [cell cells-changed]
+        (println "cell = " cell)
+        (dispatch/fire :cell-change cell)))))
+
+
+(add-watch 
+  timer 
+  ::update-timer
+  (fn [_ _ _ new-time]
+    (dispatch/fire :timer-change new-time)))
+
+(add-watch 
+  bombs-left
+  ::update-bomb-count
+  (fn [_ _ _ new-bombs]
+    (dispatch/fire :bomb-change new-bombs)))
+
+(dispatch/react-to
+  #{:click}
+    (fn [_ {y :y x :x flag-click :flag-click}]
+      (dosync
+        (let [b @board is-flag (flag? b y x) is-bomb (bomb? b y x) is-clicked (clicked? b y x)]
+          (cond 
+            is-clicked nil ;; already been clicked
+            flag-click ;; toggled a flag
+            (do
+              (alter board flag y x) ;; this will toggle the flag-marker
+              (if is-flag
+                (alter bombs-left inc)
+                (alter bombs-left dec)))
+            is-bomb 
+            (if is-flag nil ; clicking on a flagged box does nothing
+              (do
+                (alter board click y x)
+                (game-over)))
+            :else 	;; regular old click
+            (alter board clear-path y x))))))
+
+(dispatch/react-to 
+  #{:reset-game}
+  (fn [_ _]
+    (new-game @current-level)))
+
 
 (defn -main []
-  (new-game :medium)
+  (new-game @current-level)
   (print-board @board :bomb)
-  (init-gui 
-    @board @timer @bombs-left 
-    click-cb reset-cb
-    board-change timer-change bombs-change))
-  ;;(send-off timer update-timer)))
+  (init-gui @board @timer @bombs-left)
+  (send-off timer update-timer))
 
 
 
