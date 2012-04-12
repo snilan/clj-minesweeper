@@ -34,6 +34,16 @@
 
 (defrecord Square [y x bomb flag clicked bomb-neighbors])
 
+(def running (atom false))
+(def game-ready (atom false))
+(def current-level (atom :medium))
+
+(def board (ref nil))
+(def bombs-left (ref 0))
+
+(def timer (agent 0))
+
+
 ;; factory function
 (defn new-board [h w]
   (vec 
@@ -41,7 +51,6 @@
       (vec 
         (for [x (range w)]
           (Square. y x false false false 0))))))
-
 
 (def levels {
    :easy {
@@ -72,14 +81,6 @@
         (for [cell row]
           (f cell))))))
 
-
-(def running (atom false))
-(def current-level (atom :medium))
-
-(def board (ref nil))
-(def bombs-left (ref 0))
-
-(def timer (agent 0))
 
 (defn valid? [b [y x]]
   (let [bh (count b) bw (count (first b))]
@@ -122,7 +123,6 @@
         (bomb? b yn xn))
       (neighbors b y x))))
 
-
 (defn flag [b y x]
   "Mark or unmark (toggle) a position as a bomb"
     (update-in b [y x :flag] not))
@@ -158,8 +158,7 @@
         to-click
         (loop [[[y x] & more :as all] [[y-start x-start]] seen #{[y-start x-start]}]
           (if (seq all)
-            (let [
-                  not-ok #(or (seen %) (apply clicked? b %) (apply flag? b %))
+            (let [not-ok #(or (seen %) (apply clicked? b %) (apply flag? b %))
                   n (remove not-ok (neighbors b y x)) bn (bomb-neighbors b y x)]
               (if (= 0 bn)
                 (recur (concat more n) (union seen (set n)))
@@ -179,14 +178,18 @@
   (some #(and (:bomb %) (:clicked %)) (flatten @board)))
 
 (defn game-over []
-  (println "Oops! You clicked a bomb! Game over"))
+  (println "Oops! You clicked a bomb! Game over")
+  (assert (= @running true))
+  (swap! running not)
+  (dispatch/fire :game-over))
 
 (defn update-timer [x]
   (do
     (. Thread (sleep 1000))
-    (send-off *agent* #'update-timer)
+    (println "timer: " x)
+    (if @running
+      (send-off *agent* #'update-timer))
     (inc x)))
-
 
 (defn new-game [level]
   (dosync
@@ -195,9 +198,28 @@
           bombs (get-in levels [level :bomb-count])]
       (ref-set bombs-left bombs)
       (ref-set board (new-board bh bw))
+      (reset! running false)
+      (reset! game-ready true)
       (alter board place-bombs bombs))))
 
-
+(defn click-cb [y x flag-click]
+  (dosync
+    (let [b @board is-flag (flag? b y x) is-bomb (bomb? b y x) is-clicked (clicked? b y x)]
+      (cond 
+        is-clicked nil ;; already been clicked
+        flag-click ;; toggled a flag
+        (do
+          (alter board flag y x) ;; this will toggle the flag-marker
+          (if is-flag
+            (alter bombs-left inc)
+            (alter bombs-left dec)))
+        is-bomb 
+        (if is-flag nil ; clicking on a flagged box does nothing
+          (do
+            (alter board click y x)
+            (game-over)))
+        :else 	;; regular old click
+        (alter board clear-path y x)))))
 
 (add-watch
   board
@@ -210,9 +232,7 @@
               (map vector
                 (flatten old-board) (flatten new-board))))]
       (doseq [cell cells-changed]
-        (println "cell = " cell)
         (dispatch/fire :cell-change cell)))))
-
 
 (add-watch 
   timer 
@@ -226,26 +246,26 @@
   (fn [_ _ _ new-bombs]
     (dispatch/fire :bomb-change new-bombs)))
 
+(add-watch
+  running
+  ::game-change
+  (fn [_ _ _ now-running]
+    (println "running: " now-running)
+    (if now-running
+      (send-off timer update-timer))))
+
 (dispatch/react-to
   #{:click}
     (fn [_ {y :y x :x flag-click :flag-click}]
-      (dosync
-        (let [b @board is-flag (flag? b y x) is-bomb (bomb? b y x) is-clicked (clicked? b y x)]
-          (cond 
-            is-clicked nil ;; already been clicked
-            flag-click ;; toggled a flag
-            (do
-              (alter board flag y x) ;; this will toggle the flag-marker
-              (if is-flag
-                (alter bombs-left inc)
-                (alter bombs-left dec)))
-            is-bomb 
-            (if is-flag nil ; clicking on a flagged box does nothing
-              (do
-                (alter board click y x)
-                (game-over)))
-            :else 	;; regular old click
-            (alter board clear-path y x))))))
+      ;; starts the timer on first click
+      (cond 
+        (and @game-ready (not @running))
+          (do
+            (swap! running not)
+            (swap! game-ready not)
+            (click-cb y x flag-click))
+        @running
+          (click-cb y x flag-click)))) 
 
 (dispatch/react-to 
   #{:reset-game}
@@ -256,8 +276,7 @@
 (defn -main []
   (new-game @current-level)
   (print-board @board :bomb)
-  (init-gui @board @timer @bombs-left)
-  (send-off timer update-timer))
+  (init-gui @board @timer @bombs-left))
 
 
 
