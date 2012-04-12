@@ -17,43 +17,16 @@
 
 (def image-size (int (* 0.95 button-size)))
 
-(def colors {
-        1 Color/black
-		2 Color/red
-		3 Color/green
-		4 Color/orange
-		5 Color/gray
-})
-
-
-(defn scaled-icon [icon width height]
-  (ImageIcon.
-    (.getScaledInstance (.getImage icon) width height Image/SCALE_DEFAULT)))
+(defn scaled-icon [image width height]
+  (icon
+    (.getScaledInstance (.getImage image) width height Image/SCALE_DEFAULT)))
 	
-
 (def images {
-		:flag (ImageIcon. "images/minesweeper_flag.png")
-		:bomb (ImageIcon. "images/bomb.png")
-		:bomb-hit (ImageIcon. "")
-		:blank (ImageIcon. "")
+		:flag (icon "images/minesweeper_flag.png")
+		:bomb (icon "images/bomb.png")
+		:bomb-hit (icon "")
+		:blank (icon "")
 })
-
-;;(def font [bn]
-;;	(Font. "temp" Font/PLAIN (int (+ 15 (* 1.5 bn)))))
-
-(defn alert [message]
-  (JOptionPane/showMessageDialog 
-    nil message message JOptionPane/INFORMATION_MESSAGE))
-
-
-(defn click2 [this bn]
-  (do
-    (if (not= 0 bn)
-      (do 
-        (.setForeground this (colors bn))
-        (.setText this (str bn))))))
-		;;(.setEnabled this false)))
-
 
 (defn update-gui-button [gb lb]
   (let [icon 
@@ -64,23 +37,24 @@
           :else (:blank images))]
     (do-swing
       (if icon
-        (do
-          (.setText gb "")
-          (.setIcon gb (scaled-icon icon image-size image-size)))
+        (config! gb 
+                 :text ""
+                 :icon (scaled-icon icon image-size image-size))
         (let [bn (:bomb-neighbors lb)]
-          (.setIcon gb (:blank images))
-          (if (= 0 bn)
-            (.setText gb (str ""))
-            (.setText gb (str bn)))))
-      (if (:clicked lb) (.setEnabled gb false) (.setEnabled gb true)))))
+          (config! gb
+                   :icon (:blank images)
+                   :text (if (zero? bn)
+                          (str "")
+                          (str bn)))))
+      (config! gb :enabled? (not (:clicked lb))))))
 
 (defn update-gui-bombs [gui-cnt bombs] 
   (do-swing
-    (.setText gui-cnt (str "Bombs: " bombs))))
+    (config! gui-cnt :text (str "Bombs: " bombs))))
 
 (defn update-gui-timer [gui-timer t] 
   (do-swing
-    (.setText gui-timer (str "Time: " t))))
+    (config! gui-timer :text (str "Time: " t))))
 
 (defmacro on-mouse-click [component event & body]
   `(. ~component addMouseListener 
@@ -95,36 +69,37 @@
       (for [y (range bh)]
         (vec 
           (for [x (range bw)] 
-            (doto (JButton. "")
-              (.setPreferredSize (Dimension. 50 50))
-              (on-mouse-click event 
-                  (if (left-click? event)
-                    (dispatch/fire :click {:y y :x x :flag-click false})
-                    (dispatch/fire :click {:y y :x x :flag-click true}))))))))))
+            (let [btn 
+                  (button :text ""
+                          :preferred-size [50 :by 50]
+                          :class :game-button
+                          :id (keyword (str "button" x "," y)))]
+                  (on-mouse-click btn event 
+                     (if (left-click? event)
+                       (dispatch/fire :click {:y y :x x :flag-click false})
+                       (dispatch/fire :click {:y y :x x :flag-click true})))
+              btn)))))))
 
 (defn init-board [gui-buttons]
   (let  [panel (JPanel.) bh (count gui-buttons) bw (count (first gui-buttons))]
     (do	
       (.setLayout panel (GridLayout. bh bw))
-      (.setSize panel 900 800)
-      (doseq [row gui-buttons]
-        (doseq [btn row]
-          (.add panel btn))))
     panel))
 
 
 (defn init-bombs [bomb-cnt]
-  (doto
-    (JLabel. (str "Bombs left:\n", bomb-cnt))))
+  (label :text (str "Bombs left:\n", bomb-cnt)))
 
 (defn init-timer [tme]
-  (doto
-    (JLabel. (str "Time left:\n", tme))))
+  (label :text (str "Time left:\n", tme)))
 
-(defn init-reset []
-	(doto (JButton. "Reset")
-		  (on-mouse-click event
-		  		(dispatch/fire :reset))))
+(def gui-reset
+  (let [btn (button
+              :text "Reset"
+              :id :reset-button)]
+    (on-mouse-click btn event
+		  		(dispatch/fire :reset))
+    btn))
 
 (defn init-container [gui-board gui-timer gui-bombs gui-reset]
   (let [frame (JFrame. "Minesweeper")
@@ -132,16 +107,16 @@
                 (.add gui-timer)
                 (.add gui-bombs)
                 (.add gui-board))]
-    (doto frame
-      (.setDefaultCloseOperation JFrame/DISPOSE_ON_CLOSE)
-      (-> .getContentPane
+    (frame
+      :on-exit :close
+
         (.add (miglayout (JPanel.)
                          gui-board [:wrap]
                          gui-timer [:align "left"]
                          gui-reset [:align "center"]
                          gui-bombs [:align "right"]
                          )))
-      .pack .show)))
+      pack! show!)))
 
 
 (defn init-gui 
