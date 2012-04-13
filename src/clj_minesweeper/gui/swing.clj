@@ -1,20 +1,20 @@
 
 (ns clj-minesweeper.gui.swing
   (:import (java.awt Image)
-           (java.awt.event MouseEvent MouseAdapter)
-           (javax.swing Icon ImageIcon))
+           (java.awt.event MouseEvent MouseAdapter))
   (:use 
     (clojure.contrib
       [swing-utils :only (do-swing do-swing*)]
       [miglayout :only (miglayout components)]))
-  (:use [seesaw.core])
+  (:use [seesaw.core]
+        [clojure.java.io :only (file)])
   (:require 
     [clojure.contrib.miglayout :as mig]
     [clj-minesweeper.dispatch :as dispatch])
   (:gen-class))
 
 
-(def button-size 40) ; 20 by 20 pixels per button
+(def button-size 32) 
 (def image-size (int (* 0.95 button-size)))
 
 (defn scaled-icon [image width height]
@@ -22,10 +22,10 @@
     (.getScaledInstance (.getImage image) width height Image/SCALE_DEFAULT)))
 
 (def images {
-      :flag (ImageIcon. "images/minesweeper_flag.png")
-      :bomb (ImageIcon. "images/bomb.png")
-      :bomb-hit (ImageIcon. "")
-      :blank (ImageIcon. "")
+      :flag (icon (file "images/minesweeper_flag.png"))
+      :bomb (icon (file "images/bomb.png"))
+      :bomb-hit (icon (file ""))
+      :blank (icon (file ""))
 })
 
 (defmacro on-mouse-click [component event & body]
@@ -55,10 +55,27 @@
   (let [buttons (make-buttons height width)]
     (grid-panel
       :id :board
+      :hgap 0
+      :vgap 0
       :rows height
       :columns width
       :items buttons)))
 
+(defn make-levels [{levels :levels default :default}]
+  (let [rbs (for [level levels] 
+              (radio
+                :id level
+                :class :level 
+                :selected? (= default level)
+                :text (name level)))
+        group (button-group)]
+    (config! rbs :group group)
+    (listen group :selection
+            (fn [e]
+              (when-let [s (selection group)]
+                (dispatch/fire :level-change (id-of s)))))
+    (flow-panel 
+      :items rbs)))
 
 (defn make-bomb-label [bomb-cnt]
   (label
@@ -79,11 +96,12 @@
     btn))
 
 
-(defn make-top-panel []
+(defn make-top-panel [bombs levels]
   (flow-panel
-    :items [(make-bomb-label 0)
+    :items [(make-bomb-label bombs)
+            (make-reset)
             (make-timer 0)
-            (make-reset)]
+            (make-levels levels)]
     :hgap 10))
 
 (defn make-frame []
@@ -128,13 +146,13 @@
 
 (defn add-behaviors [root]
   (add-behavior #{:new-game}
-                (fn [_ {height :height width :width bombs :bomb-cnt}]
+                (fn [_ {height :height width :width bombs :bomb-cnt levels :levels}]
                   (config! root
                            :content (border-panel
                                       :border 5
                                       :hgap 5
                                       :vgap 5
-                                      :north (make-top-panel)
+                                      :north (make-top-panel bombs levels)
                                       :center (make-board height width)
                                       :south (label :h-text-position :center :text "Ready to play!")))
                   (config! (select root [:#bomb-label])

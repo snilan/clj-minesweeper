@@ -24,7 +24,6 @@
 
 (def timer (agent 0))
 
-
 ;; factory function
 (defn new-board [h w]
   (vec 
@@ -62,7 +61,6 @@
         (for [cell row]
           (f cell))))))
 
-
 (defn valid? [b [y x]]
   (let [bh (count b) bw (count (first b))]
     (and (< -1 y bh) (< -1 x bw))))
@@ -76,9 +74,6 @@
 (defn flag? [b y x]
   (:flag (get-in b [y x])))
 
-(defn bn? [b y x]
-  (:bomb-neighbors (get-in b [y x])))
-
 (defn neighbors [b y x] 
   (filter 
     (partial valid?	b)			
@@ -86,11 +81,13 @@
          [[-1 0] [-1 1] [0 1] [1 1] [1 0] [1 -1] [0 -1] [-1 -1]])))
 
 (defn bomb-neighbors [b y x]
-  "Returns an integer representing the number of bordering bombs"
+  (:bomb-neighbors (get-in b [y x])))
+
+(defn flag-neighbors [b y x]
+  "Returns an integer representing the number of borderingi flags"
   (count 
     (filter 
-      (fn [[yn xn]]
-        (bomb? b yn xn))
+      #(apply flag? b %)
       (neighbors b y x))))
 
 (defn flag [b y x]
@@ -129,8 +126,10 @@
         (loop [[[y x] & more :as all] [[y-start x-start]] seen #{[y-start x-start]}]
           (if (seq all)
             (let [not-ok #(or (seen %) (apply clicked? b %) (apply flag? b %))
-                  n (remove not-ok (neighbors b y x)) bn (bomb-neighbors b y x)]
-              (if (= 0 bn)
+                  n (remove not-ok (neighbors b y x)) 
+                  flagn (flag-neighbors b y x)
+                  bombn (bomb-neighbors b y x)]
+              (if (and (zero? flagn) (zero? bombn))
                 (recur (concat more n) (union seen (set n)))
                 (recur more seen)))
             seen))]
@@ -150,12 +149,14 @@
   (swap! running not)
   (dispatch/fire :bomb-click))
 
-(defn update-timer [x]
-  (do
+(defn update-timer [x & args]
+  (let [x (if (seq args) 0 x)]
     (. Thread (sleep 1000))
     (if @running
-      (send-off *agent* #'update-timer))
-    (inc x)))
+      (do
+        (send-off *agent* #'update-timer)
+        (inc x))
+      x)))
 
 (defn new-game [level]
   (let [height (get-in levels [level :height])
@@ -167,9 +168,12 @@
       (reset! running false)
       (reset! game-ready true)
       (alter board place-bombs bombs))
+    (print-board @board :bomb)
     (dispatch/fire :new-game 
                    {:height height
                     :width width
+                    :levels {:levels [:easy :medium :hard]
+                             :default @current-level}
                     :bomb-cnt bombs})))
 
 (defn click-cb [y x flag-click]
@@ -227,7 +231,7 @@
   (fn [_ _ _ now-running]
     (println "running: " now-running)
     (if now-running
-      (send-off timer update-timer))))
+      (send-off timer update-timer :restart))))
 
 (dispatch/react-to
   #{:click}
@@ -242,12 +246,17 @@
       @running
       (click-cb y x flag-click)))) 
 
+(dispatch/react-to
+  #{:level-change}
+  (fn [_ level]
+    (assert (contains? levels level))
+    (reset! current-level level)))
+
 (dispatch/react-to 
   #{:reset-game}
   (fn [_ _]
     (new-game @current-level)))
 
 (defn -main []
-        (new-game @current-level)
-        (print-board @board :bomb))
+  (new-game @current-level))
 
