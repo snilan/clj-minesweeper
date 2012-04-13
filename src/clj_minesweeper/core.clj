@@ -7,29 +7,10 @@
 
 
 ;	TODO
-
-;   - Implement end of game logic (check for bomb hit / all bombs flagged)
-;		- either in board-change function or click-cb
-
 ; 	fix clear-path to work with flags
 ; 	add unit tests
-
-;;(defn gui-bind [ident gui display]
-;;	(add-watch ident
-;;		(keyword (gensym))
-;;		(fn [_ _ _ val]
-;;			(display gui val))))
-
-;; could pass (partial gui-bind) to gui
-;; (let [gui (JLabel.)
-;;		display (fn [g val]
-;;					(.setText g (str val)))]
-;;	(on-atom-change gui change))
-
-;
 ;   - Make the GUI pretty
 ;   - Port to Javascript
-
 
 
 (defrecord Square [y x bomb flag clicked bomb-neighbors])
@@ -54,9 +35,9 @@
 
 (def levels {
    :easy {
-      :height 16
-      :width 16 
-      :bomb-count 20 
+      :height 8
+      :width 8 
+      :bomb-count 10 
     }
    :medium {
       :height 16
@@ -97,17 +78,6 @@
 
 (defn bn? [b y x]
   (:bomb-neighbors (get-in b [y x])))
-
-(defn change-level [level] {
-	:pre (contains? levels level)
-  }
-  (reset! current-level level)
-  (reset! running false)
-  (reset! board 
-    (new-board 
-	  (get-in levels [level :height]) 
-      (get-in levels [level :width]))))
-	;update GUI
 
 (defn neighbors [b y x] 
   (filter 
@@ -174,33 +144,33 @@
       (set (filter :bomb squares)) 
       (set (filter :flag squares)))))
 
-(defn fail? []
-  (some #(and (:bomb %) (:clicked %)) (flatten @board)))
-
 (defn game-over []
   (println "Oops! You clicked a bomb! Game over")
   (assert (= @running true))
   (swap! running not)
-  (dispatch/fire :game-over))
+  (dispatch/fire :bomb-click))
 
 (defn update-timer [x]
   (do
     (. Thread (sleep 1000))
-    (println "timer: " x)
     (if @running
       (send-off *agent* #'update-timer))
     (inc x)))
 
 (defn new-game [level]
-  (dosync
-    (let [bh (get-in levels [level :height])
-          bw (get-in levels [level :width])
-          bombs (get-in levels [level :bomb-count])]
+  (let [height (get-in levels [level :height])
+        width (get-in levels [level :width])
+        bombs (get-in levels [level :bomb-count])]
+    (dosync
       (ref-set bombs-left bombs)
-      (ref-set board (new-board bh bw))
+      (ref-set board (new-board height width))
       (reset! running false)
       (reset! game-ready true)
-      (alter board place-bombs bombs))))
+      (alter board place-bombs bombs))
+    (dispatch/fire :new-game 
+                   {:height height
+                    :width width
+                    :bomb-cnt bombs})))
 
 (defn click-cb [y x flag-click]
   (dosync
@@ -219,7 +189,12 @@
             (alter board click y x)
             (game-over)))
         :else 	;; regular old click
-        (alter board clear-path y x)))))
+        (alter board clear-path y x))))
+  (if (game-won? @board)
+    (do
+      (assert @running)
+      (swap! running not)
+      (dispatch/fire :game-won))))
 
 (add-watch
   board
@@ -227,10 +202,10 @@
   (fn [_ _ old-board new-board]
     (let [cells-changed
           (map second
-            (filter (fn [[x y]]
-                        (not= x y)) 
-              (map vector
-                (flatten old-board) (flatten new-board))))]
+               (filter (fn [[x y]]
+                         (not= x y)) 
+                       (map vector
+                            (flatten old-board) (flatten new-board))))]
       (doseq [cell cells-changed]
         (dispatch/fire :cell-change cell)))))
 
@@ -256,27 +231,23 @@
 
 (dispatch/react-to
   #{:click}
-    (fn [_ {y :y x :x flag-click :flag-click}]
-      ;; starts the timer on first click
-      (cond 
-        (and @game-ready (not @running))
-          (do
-            (swap! running not)
-            (swap! game-ready not)
-            (click-cb y x flag-click))
-        @running
-          (click-cb y x flag-click)))) 
+  (fn [_ {y :y x :x flag-click :flag-click}]
+    ;; starts the timer on first click
+    (cond 
+      (and @game-ready (not @running))
+      (do
+        (swap! running not)
+        (swap! game-ready not)
+        (click-cb y x flag-click))
+      @running
+      (click-cb y x flag-click)))) 
 
 (dispatch/react-to 
   #{:reset-game}
   (fn [_ _]
     (new-game @current-level)))
 
-
 (defn -main []
-  (new-game @current-level)
-  (print-board @board :bomb)
-  (init-gui @board @timer @bombs-left))
-
-
+        (new-game @current-level)
+        (print-board @board :bomb))
 
