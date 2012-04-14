@@ -1,15 +1,14 @@
 
-
 About:
-   This is my attempt at writing a functional(ish) minesweeper in Clojure.
-   Since Clojure targets three different environments (JVM, CLR, and JavaScript),
-   I'm trying to write the actual logic in a platform-agnostic manner.
-   
-   This is still very much a work in progress.
+This is my attempt at writing a functional(ish) minesweeper in Clojure.
+It uses the excellent library Seesaw used as a wrap around to Swing and
+it also takes the simple event dispatching from ClojureScript One.
 
 Usage:
-   (none yet)
+lein deps
+lein run
 
-Copyright (C) 2011 Sean Nilan
+
+Copyright (C) 2012 Sean Nilan
 
 Distributed under the Eclipse Public License, the same as Clojure.
